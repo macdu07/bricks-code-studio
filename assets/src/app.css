@@ -113,7 +113,22 @@
   text-transform: uppercase;
 }
 .bcs-file-list { padding: 6px; }
-.bcs-folder > summary { padding: 6px 8px; color: var(--bcs-muted); cursor: pointer; font-size: 11px; list-style-position: inside; }
+.bcs-folder > summary { padding: 4px 4px 4px 8px; color: var(--bcs-muted); cursor: pointer; font-size: 11px; list-style-position: inside; }
+.bcs-folder > summary > span { vertical-align: middle; }
+.bcs-folder-add {
+  float: right;
+  width: 24px;
+  height: 24px;
+  margin-top: -3px;
+  border: 0;
+  border-radius: var(--bcs-radius);
+  background: transparent;
+  color: var(--bcs-muted);
+  cursor: pointer;
+  font: 16px/24px var(--builder-font-family-monospace, monospace);
+  opacity: .55;
+}
+.bcs-folder > summary:hover .bcs-folder-add, .bcs-folder-add:focus-visible { background: var(--bcs-bg-3); color: var(--bcs-text); opacity: 1; }
 .bcs-folder > div { margin-left: 10px; padding-left: 10px; border-left: 1px solid var(--bcs-border); }
 .bcs-file {
   width: 100%;
@@ -157,6 +172,47 @@
 .bcs-editor .cm-gutters { background: var(--bcs-bg-2); color: var(--bcs-muted); border-color: var(--bcs-border); }
 .bcs-editor .cm-activeLine, .bcs-editor .cm-activeLineGutter { background: color-mix(in srgb, var(--bcs-bg-3) 58%, transparent); }
 .bcs-editor .cm-selectionBackground { background: var(--bcs-class-bg) !important; }
+.bcs-color-swatch {
+  position: relative;
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--bcs-text) 28%, transparent);
+  border-radius: 3px;
+  background: var(--bcs-swatch-color);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
+  vertical-align: -2px;
+  cursor: pointer;
+}
+.bcs-color-swatch:hover, .bcs-color-swatch:focus-visible { outline: 2px solid var(--bcs-class); outline-offset: 1px; }
+.bcs-color-swatch input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.bcs-context-menu {
+  position: fixed;
+  z-index: 2147483647;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid var(--bcs-border);
+  border-radius: var(--bcs-radius);
+  background: var(--bcs-bg-2);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+}
+.bcs-context-menu[hidden] { display: none; }
+.bcs-context-menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: var(--bcs-radius);
+  padding: 7px 9px;
+  background: transparent;
+  color: var(--bcs-text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.bcs-context-menu button:hover, .bcs-context-menu button:focus-visible { background: var(--bcs-bg-3); outline: 0; }
+.bcs-context-menu button.is-danger { color: var(--bcs-danger); }
 
 .bcs-diagnostics-list { padding: 8px; }
 .bcs-diagnostic {

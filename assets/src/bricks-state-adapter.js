@@ -53,3 +53,38 @@ export function refreshBricksDesignState(designState, bricksVersion = '') {
   Promise.resolve().then(() => { builderState.isBroadcasting = false; });
   return { refreshed: true, activeClassId };
 }
+
+/**
+ * Replace the active Bricks area after Code Studio persisted an HTML structure.
+ * The server remains authoritative; this only keeps the open 2.4 builder reactive
+ * state aligned so the user does not have to reload after every HTML save.
+ */
+export function refreshBricksStructureState(elements, bricksVersion = '') {
+  if (!Array.isArray(elements) || !/^2\.4(?:\.|-|$)/.test(String(bricksVersion))) {
+    return { refreshed: false, reason: 'unsupported-version' };
+  }
+  const host = document.querySelector('.brx-body');
+  const app = host?.__vue_app__ || host?._vnode?.appContext?.app;
+  const globals = app?.config?.globalProperties;
+  const builderState = globals?.$_state;
+  if (!builderState) return { refreshed: false, reason: 'builder-state-unavailable' };
+
+  const dynamicArea = globals?.$_dynamicArea;
+  const area = typeof dynamicArea === 'string' ? dynamicArea : dynamicArea?.value;
+  const targetArea = ['header', 'content', 'footer'].includes(area) ? area : 'content';
+  const nextElements = clone(elements);
+  const activeId = builderState.activeId || '';
+  builderState.isBroadcasting = true;
+  builderState[targetArea] = nextElements;
+  builderState.activeElement = activeId ? clone(nextElements.find(element => element.id === activeId) || null) : null;
+  if (!builderState.activeElement) builderState.activeId = null;
+  if (Array.isArray(builderState.unsavedChanges)) {
+    builderState.unsavedChanges = builderState.unsavedChanges.filter(key => key !== targetArea);
+  }
+  if (window.bricksData?.loadData) window.bricksData.loadData[targetArea] = clone(nextElements);
+  builderState.rerenderElementIds = nextElements.map(element => element.id).filter(Boolean);
+  builderState.forceRender = `${Date.now()}:structure`;
+  if (typeof globals.$_rerenderControls === 'function') globals.$_rerenderControls();
+  Promise.resolve().then(() => { builderState.isBroadcasting = false; });
+  return { refreshed: true, area: targetArea };
+}

@@ -4,6 +4,8 @@ namespace BricksCodeStudio;
 final class StructureService {
 	private const SUPPORTED = [ 'section', 'container', 'block', 'div', 'heading', 'text-basic', 'text', 'text-link', 'button', 'image', 'html' ];
 	private const LEAF      = [ 'heading', 'text-basic', 'text', 'text-link', 'button', 'image', 'html' ];
+	private $global_class_names_by_id;
+	private $global_class_ids_by_name;
 
 	public function projection( int $post_id ) {
 		$result = Ability::run( 'bricks/get-page-elements', [ 'postId' => $post_id ] );
@@ -49,6 +51,7 @@ final class StructureService {
 			'treeHash' => Support::canonical_json_hash( $readback['elements'] ?? [] ),
 			'diff' => $merged['diff'],
 			'revisionVerified' => ! is_wp_error( $revisions ),
+			'elements' => array_values( $readback['elements'] ?? [] ),
 		];
 	}
 
@@ -150,7 +153,7 @@ final class StructureService {
 		}
 
 		$outer = $node->ownerDocument->saveHTML( $node );
-		if ( strpos( $outer, 'data-bcs-id=' ) === false ) {
+		if ( strpos( $outer, 'data-bcs-id=' ) === false && ! $this->is_native_editable_node( $node ) ) {
 			$converted = Ability::run(
 				'bricks/convert-html-css-to-bricks-data',
 				[
@@ -202,18 +205,19 @@ final class StructureService {
 	}
 
 	private function serialize( array $elements ): string {
+		[ $class_names_by_id ] = $this->global_class_maps();
 		$index = [];
 		foreach ( $elements as $element ) { if ( ! empty( $element['id'] ) ) { $index[ $element['id'] ] = $element; } }
 		$html = [];
 		foreach ( $elements as $element ) {
 			if ( empty( $element['parent'] ) || ! isset( $index[ $element['parent'] ] ) ) {
-				$html[] = $this->serialize_element( $element, $index, 0 );
+				$html[] = $this->serialize_element( $element, $index, 0, $class_names_by_id );
 			}
 		}
 		return implode( "\n", $html );
 	}
 
-	private function serialize_element( array $element, array $index, int $depth ): string {
+	private function serialize_element( array $element, array $index, int $depth, array $class_names_by_id ): string {
 		$indent = str_repeat( '  ', $depth );
 		$id = esc_attr( $element['id'] ?? '' );
 		$name = esc_attr( $element['name'] ?? 'unknown' );
@@ -221,7 +225,7 @@ final class StructureService {
 			return sprintf( '%s<bricks-node data-bcs-id="%s" data-bcs-name="%s" data-bcs-protected="true"></bricks-node>', $indent, $id, $name );
 		}
 		$tag = $this->tag_for( $element );
-		$classes = trim( (string) ( $element['settings']['_cssClasses'] ?? '' ) );
+		$classes = implode( ' ', $this->class_names_for_settings( $element['settings'] ?? [], $class_names_by_id ) );
 		$attrs = sprintf( ' data-bcs-id="%s" data-bcs-name="%s"', $id, $name );
 		if ( $classes ) { $attrs .= ' class="' . esc_attr( $classes ) . '"'; }
 		if ( $element['name'] === 'image' ) {
@@ -232,7 +236,7 @@ final class StructureService {
 		if ( ! in_array( $element['name'], self::LEAF, true ) ) {
 			$children = [];
 			foreach ( $element['children'] ?? [] as $child_id ) {
-				if ( isset( $index[ $child_id ] ) ) { $children[] = $this->serialize_element( $index[ $child_id ], $index, $depth + 1 ); }
+				if ( isset( $index[ $child_id ] ) ) { $children[] = $this->serialize_element( $index[ $child_id ], $index, $depth + 1, $class_names_by_id ); }
 			}
 			$content = $children ? "\n" . implode( "\n", $children ) . "\n" . $indent : '';
 		}
@@ -269,7 +273,8 @@ final class StructureService {
 	private function update_settings_from_node( array $element, \DOMElement $node ): array {
 		$settings = $element['settings'] ?? [];
 		$classes = trim( preg_replace( '/\s+/', ' ', $node->getAttribute( 'class' ) ) );
-		if ( $classes ) { $settings['_cssClasses'] = $classes; } else { unset( $settings['_cssClasses'] ); }
+		[, $class_ids_by_name ] = $this->global_class_maps();
+		$settings = $this->apply_class_tokens( $settings, $classes ? preg_split( '/\s+/', $classes ) : [], $class_ids_by_name );
 		if ( in_array( $element['name'], [ 'heading', 'text-basic', 'text', 'text-link', 'button' ], true ) ) {
 			$settings['text'] = $this->inner_html( $node );
 		}
@@ -288,6 +293,53 @@ final class StructureService {
 			}
 		}
 		return $settings;
+	}
+
+	private function global_class_maps(): array {
+		if ( is_array( $this->global_class_names_by_id ) && is_array( $this->global_class_ids_by_name ) ) {
+			return [ $this->global_class_names_by_id, $this->global_class_ids_by_name ];
+		}
+		$option = defined( 'BRICKS_DB_GLOBAL_CLASSES' ) ? BRICKS_DB_GLOBAL_CLASSES : 'bricks_global_classes';
+		$classes = get_option( $option, [] );
+		$this->global_class_names_by_id = [];
+		$this->global_class_ids_by_name = [];
+		foreach ( is_array( $classes ) ? $classes : [] as $class ) {
+			$id = (string) ( $class['id'] ?? '' );
+			$name = (string) ( $class['name'] ?? '' );
+			if ( $id && $name ) {
+				$this->global_class_names_by_id[ $id ] = $name;
+				$this->global_class_ids_by_name[ $name ] = $id;
+			}
+		}
+		return [ $this->global_class_names_by_id, $this->global_class_ids_by_name ];
+	}
+
+	private function class_names_for_settings( array $settings, array $class_names_by_id ): array {
+		$names = [];
+		foreach ( (array) ( $settings['_cssGlobalClasses'] ?? [] ) as $id ) {
+			if ( isset( $class_names_by_id[ $id ] ) ) { $names[] = $class_names_by_id[ $id ]; }
+		}
+		$local = $settings['_cssClasses'] ?? [];
+		$local = is_array( $local ) ? $local : preg_split( '/\s+/', trim( (string) $local ) );
+		foreach ( $local as $name ) { if ( is_string( $name ) && trim( $name ) !== '' ) { $names[] = trim( $name ); } }
+		return array_values( array_unique( $names ) );
+	}
+
+	private function apply_class_tokens( array $settings, array $tokens, array $class_ids_by_name ): array {
+		$global_ids = [];
+		$local_names = [];
+		foreach ( array_values( array_unique( array_filter( array_map( 'trim', $tokens ) ) ) ) as $name ) {
+			if ( in_array( $name, [ 'brxe-container', 'brxe-block' ], true ) ) { continue; }
+			if ( isset( $class_ids_by_name[ $name ] ) ) { $global_ids[] = $class_ids_by_name[ $name ]; }
+			else { $local_names[] = $name; }
+		}
+		if ( $global_ids ) { $settings['_cssGlobalClasses'] = $global_ids; } else { unset( $settings['_cssGlobalClasses'] ); }
+		if ( $local_names ) { $settings['_cssClasses'] = implode( ' ', $local_names ); } else { unset( $settings['_cssClasses'] ); }
+		return $settings;
+	}
+
+	private function is_native_editable_node( \DOMElement $node ): bool {
+		return (bool) preg_match( '/^(section|header|footer|article|aside|div|nav|main|span|ul|ol|li|figure|blockquote|h[1-6]|p|label|a|button|img)$/i', $node->tagName );
 	}
 
 	private function new_element_from_node( \DOMElement $node, $parent ): array {

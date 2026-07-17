@@ -10,10 +10,11 @@ Bricks Code Studio adds a docked code workspace to Bricks Builder 2.4+ for editi
 - Live CSS preview in the Bricks canvas.
 - Controlled JavaScript preview.
 - CSS class and variable synchronization with Bricks.
-- Automatic synchronization and reactive refresh of active Bricks controls on save.
-- CodeMirror editing with autocomplete and diagnostics.
+- Automatic synchronization—including first-time linking of same-named Bricks classes—and reactive refresh of active controls on save.
+- CodeMirror editing with autocomplete, diagnostics, and editable inline color swatches.
+- Context-aware file creation from workspace folders and VS Code-style right-click menus.
 - `Ctrl+S` / `Cmd+S` integration with the native Bricks save shortcut.
-- Experimental protected HTML structure projection, preview, diff, apply, and undo.
+- Experimental protected HTML structure projection, preview, diff, save-to-apply, global-class round-trip, and undo.
 
 ## Requirements
 
@@ -48,4 +49,3 @@ The workspace is stored under WordPress uploads. Existing child-theme files are 
 ## Status
 
 This project is under active development. The HTML structure editor and the Bricks 2.4 reactive control adapter are experimental and version-gated.
-

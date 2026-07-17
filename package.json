@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "scripts": {
     "build": "esbuild assets/src/app.js --bundle --minify --sourcemap --outfile=assets/dist/app.js && esbuild assets/src/bridge.js --bundle --minify --sourcemap --outfile=assets/dist/bridge.js && esbuild assets/src/app.css --bundle --minify --outfile=assets/dist/app.css",
-    "test": "node --test tests/js/*.test.js"
+    "test": "node --test tests/js/*.test.mjs"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",
