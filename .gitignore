@@ -1,0 +1,9 @@
+.DS_Store
+.idea/
+.vscode/
+.phpunit.result.cache
+node_modules/
+vendor/
+npm-debug.log*
+composer.phar
+

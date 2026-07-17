@@ -1,0 +1,19 @@
+{
+  "name": "mauriciocorrea/bricks-code-studio",
+  "description": "A docked code workspace for Bricks Builder.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": ">=7.4",
+    "scssphp/scssphp": "^1.13 || ^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "BricksCodeStudio\\": "src/"
+    }
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^9.6"
+  }
+}
+

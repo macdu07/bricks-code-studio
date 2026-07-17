@@ -1,0 +1,19 @@
+{
+  "name": "bricks-code-studio",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "build": "esbuild assets/src/app.js --bundle --minify --sourcemap --outfile=assets/dist/app.js && esbuild assets/src/bridge.js --bundle --minify --sourcemap --outfile=assets/dist/bridge.js && esbuild assets/src/app.css --bundle --minify --outfile=assets/dist/app.css",
+    "test": "node --test tests/js/*.test.js"
+  },
+  "dependencies": {
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.38.0",
+    "esbuild": "^0.25.0"
+  }
+}
