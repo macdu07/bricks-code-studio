@@ -96,10 +96,10 @@
 .bcs-header button.bcs-primary { background: var(--bcs-accent); color: var(--bcs-accent-inverse); font-weight: 700; }
 .bcs-header button[hidden] { display: none; }
 
-.bcs-body { display: grid; grid-template-columns: 220px minmax(320px, 1fr) 270px; min-height: 0; flex: 1; }
+.bcs-body { display: grid; grid-template-columns: 270px minmax(320px, 1fr) 220px; min-height: 0; flex: 1; }
 .bcs-files, .bcs-diagnostics { overflow: auto; background: var(--bcs-bg-2); }
-.bcs-files { border-right: 1px solid var(--bcs-border); }
-.bcs-diagnostics { border-left: 1px solid var(--bcs-border); }
+.bcs-files { border-left: 1px solid var(--bcs-border); }
+.bcs-diagnostics { border-right: 1px solid var(--bcs-border); }
 .bcs-files-title, .bcs-diagnostics-title {
   position: sticky;
   top: 0;
@@ -200,7 +200,7 @@
 .bcs-editor .cm-completionIcon { opacity: .8; }
 
 @media (max-width: 1100px) {
-  .bcs-body { grid-template-columns: 180px minmax(280px, 1fr); }
+  .bcs-body { grid-template-columns: minmax(280px, 1fr) 180px; }
   .bcs-diagnostics { display: none; }
   .bcs-brand small, .bcs-live, .bcs-actions [data-action="rename"], .bcs-actions [data-action="delete"] { display: none; }
 }

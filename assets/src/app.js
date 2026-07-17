@@ -58,9 +58,9 @@ root.innerHTML = `
       </div>
     </header>
     <div class="bcs-body">
-      <aside class="bcs-files"><div class="bcs-files-title">Workspace</div><div class="bcs-file-list"></div></aside>
-      <main class="bcs-editor-area"><div class="bcs-breadcrumb">Choose a file</div><div class="bcs-editor"></div></main>
       <aside class="bcs-diagnostics"><div class="bcs-diagnostics-title">Diagnostics</div><div class="bcs-diagnostics-list">Ready.</div></aside>
+      <main class="bcs-editor-area"><div class="bcs-breadcrumb">Choose a file</div><div class="bcs-editor"></div></main>
+      <aside class="bcs-files"><div class="bcs-files-title">Workspace</div><div class="bcs-file-list"></div></aside>
     </div>
     <footer class="bcs-status"><span data-status>Ready</span><span data-meta>Autocomplete: Ctrl/⌘ Space · Bricks Code Studio ${boot.version}</span></footer>
   </section>`;
