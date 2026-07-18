@@ -8,6 +8,7 @@ import { html, htmlLanguage } from '@codemirror/lang-html';
 import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { refreshBricksDesignState, refreshBricksStructureState } from './bricks-state-adapter.js';
+import { bottomDockOffset } from './builder-dock.mjs';
 import { extensionForFolder, resolveNewFilePath, tabForPath } from './workspace-paths.mjs';
 
 const boot = window.BCS_BOOT;
@@ -75,6 +76,9 @@ const breadcrumb = root.querySelector('.bcs-breadcrumb');
 const diagnosticsList = root.querySelector('.bcs-diagnostics-list');
 const statusNode = root.querySelector('[data-status]');
 const contextMenu = root.querySelector('.bcs-context-menu');
+let builderToolbarResizeObserver = null;
+let observedBottomToolbar = null;
+let dockFrame = 0;
 
 async function api(path, method = 'GET', data = null) {
   const options = { method, headers: { 'X-WP-Nonce': boot.nonce } };
@@ -93,6 +97,39 @@ async function api(path, method = 'GET', data = null) {
 
 function params(extra = {}) { return { scope: state.scope, postId: state.postId, ...extra }; }
 function setStatus(message, type = '') { statusNode.textContent = message; statusNode.dataset.type = type; }
+
+function bottomBuilderToolbar() {
+  return document.querySelector('#bricks-toolbar-bottom, .bricks-toolbar.toolbar-bottom');
+}
+
+function syncBuilderDock() {
+  dockFrame = 0;
+  const toolbar = bottomBuilderToolbar();
+  if (toolbar !== observedBottomToolbar) {
+    builderToolbarResizeObserver?.disconnect();
+    observedBottomToolbar = toolbar;
+    if (toolbar && window.ResizeObserver) {
+      builderToolbarResizeObserver = new ResizeObserver(scheduleBuilderDockSync);
+      builderToolbarResizeObserver.observe(toolbar);
+    }
+  }
+  const style = toolbar ? getComputedStyle(toolbar) : null;
+  const visible = Boolean(toolbar && style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity || 1) !== 0);
+  const offset = bottomDockOffset(toolbar?.getBoundingClientRect(), window.innerHeight, visible);
+  root.style.setProperty('--bcs-builder-bottom-offset', `${offset}px`);
+  panel.dataset.builderDock = offset > 0 ? 'bottom' : 'none';
+}
+
+function scheduleBuilderDockSync() {
+  if (!dockFrame) dockFrame = requestAnimationFrame(syncBuilderDock);
+}
+
+function setupBuilderDock() {
+  syncBuilderDock();
+  window.addEventListener('resize', scheduleBuilderDockSync);
+  new MutationObserver(scheduleBuilderDockSync).observe(document.body, { childList: true, subtree: true });
+}
+
 function language(path) {
   if (path.endsWith('.js')) return javascript();
   if (path === 'structure.html') return html({ autoCloseTags: true, selfClosingTags: true });
@@ -828,7 +865,10 @@ const resizer = root.querySelector('.bcs-resizer');
 resizer.addEventListener('pointerdown', event => {
   event.preventDefault();
   const startY = event.clientY, startHeight = panel.getBoundingClientRect().height;
-  const move = e => { panel.style.height = `${Math.max(180, Math.min(window.innerHeight - 60, startHeight + startY - e.clientY))}px`; };
+  const move = e => {
+    const dockOffset = parseFloat(getComputedStyle(root).getPropertyValue('--bcs-builder-bottom-offset')) || 0;
+    panel.style.height = `${Math.max(180, Math.min(window.innerHeight - dockOffset - 60, startHeight + startY - e.clientY))}px`;
+  };
   const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); savePreferences(); };
   window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
 });
@@ -846,6 +886,7 @@ function updateAutoSyncButton() {
     state.scope = state.prefs.scope === 'document' && state.postId ? 'document' : 'global';
     panel.style.height = `${state.prefs.height || 360}px`;
     panel.classList.toggle('is-minimized', state.prefs.open === false);
+    setupBuilderDock();
     updateAutoSyncButton();
     root.querySelectorAll('[data-scope]').forEach(el => el.classList.toggle('is-active', el.dataset.scope === state.scope));
     updateActions();
