@@ -17,6 +17,7 @@ final class RestController {
 	public function register(): void {
 		$routes = [
 			'/workspace' => [ 'GET', 'workspace' ],
+			'/workspace/build' => [ 'POST', 'workspace_build' ],
 			'/file' => [ [ 'GET', 'file_read' ], [ 'PUT', 'file_write' ], [ 'DELETE', 'file_delete' ] ],
 			'/file/move' => [ 'POST', 'file_move' ],
 			'/compile' => [ 'POST', 'compile' ],
@@ -57,6 +58,7 @@ final class RestController {
 	}
 
 	public function workspace( \WP_REST_Request $request ) { [ $scope, $post_id ] = $this->scope( $request ); return $this->respond( $this->workspace->list_files( $scope, $post_id ) ); }
+	public function workspace_build( \WP_REST_Request $request ) { [ $scope, $post_id ] = $this->scope( $request ); return $this->respond( $this->workspace->update_build_settings( $scope, $post_id, sanitize_key( (string) $request['cssOutput'] ), rest_sanitize_boolean( $request['sourceMaps'] ) ) ); }
 	public function file_read( \WP_REST_Request $request ) { [ $scope, $post_id ] = $this->scope( $request ); return $this->respond( $this->workspace->read_file( $scope, $post_id, sanitize_text_field( (string) $request['path'] ) ) ); }
 	public function file_write( \WP_REST_Request $request ) { [ $scope, $post_id ] = $this->scope( $request ); return $this->respond( $this->workspace->write_file( $scope, $post_id, sanitize_text_field( (string) $request['path'] ), (string) $request['content'], sanitize_text_field( (string) $request['expectedHash'] ) ) ); }
 	public function file_delete( \WP_REST_Request $request ) { [ $scope, $post_id ] = $this->scope( $request ); return $this->respond( $this->workspace->delete_file( $scope, $post_id, sanitize_text_field( (string) $request['path'] ) ) ); }
@@ -82,7 +84,7 @@ final class RestController {
 	public function design_apply( \WP_REST_Request $request ) { return $this->respond( $this->design->apply( absint( $request['postId'] ), (string) $request['css'], sanitize_text_field( (string) $request['previewHash'] ), rest_sanitize_boolean( $request['confirmed'] ), rest_sanitize_boolean( $request['linkExisting'] ) ) ); }
 	public function design_restore( \WP_REST_Request $request ) { return $this->respond( $this->design->restore( sanitize_text_field( (string) $request['backupId'] ), rest_sanitize_boolean( $request['confirmed'] ) ) ); }
 
-	public function preferences() { return rest_ensure_response( get_user_meta( get_current_user_id(), 'bcs_preferences', true ) ?: [ 'height' => 360, 'open' => true, 'scope' => 'global', 'autoSync' => true ] ); }
+	public function preferences() { return rest_ensure_response( get_user_meta( get_current_user_id(), 'bcs_preferences', true ) ?: [ 'height' => 360, 'open' => true, 'scope' => 'global', 'autoSync' => true, 'livePreview' => true ] ); }
 	public function preferences_save( \WP_REST_Request $request ) {
 		$data = [
 			'height' => max( 180, min( 900, absint( $request['height'] ) ) ),
@@ -90,6 +92,7 @@ final class RestController {
 			'scope' => in_array( $request['scope'], [ 'global', 'document' ], true ) ? $request['scope'] : 'global',
 			'activeFile' => sanitize_text_field( (string) $request['activeFile'] ),
 			'autoSync' => $request->has_param( 'autoSync' ) ? rest_sanitize_boolean( $request['autoSync'] ) : true,
+			'livePreview' => $request->has_param( 'livePreview' ) ? rest_sanitize_boolean( $request['livePreview'] ) : true,
 		];
 		update_user_meta( get_current_user_id(), 'bcs_preferences', $data );
 		return rest_ensure_response( $data );

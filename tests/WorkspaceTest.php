@@ -11,6 +11,8 @@ final class WorkspaceTest extends TestCase {
 
 	protected function setUp(): void {
 		$this->workspace = new Workspace();
+		$this->workspace->ensure_scope( 'document', $this->post_id );
+		$this->workspace->update_build_settings( 'document', $this->post_id, 'expanded', true );
 	}
 
 	public function test_random_bricks_ids_are_valid(): void {
@@ -50,6 +52,32 @@ final class WorkspaceTest extends TestCase {
 		$this->assertStringContainsString( '.plain-css { display: grid; }', $result['css'] );
 		$this->assertContains( 'css/plain.css', $this->workspace->list_files( 'document', $this->post_id )['manifest']['entries'] );
 		$this->workspace->delete_file( 'document', $this->post_id, 'css/plain.css' );
+	}
+
+	public function test_build_settings_are_stored_in_the_workspace_manifest(): void {
+		$result = $this->workspace->update_build_settings( 'document', $this->post_id, 'compressed', false );
+		$this->assertFalse( is_wp_error( $result ) );
+		$this->assertSame( [ 'cssOutput' => 'compressed', 'sourceMaps' => false ], $result['build'] );
+		$this->assertSame( $result['build'], $this->workspace->list_files( 'document', $this->post_id )['manifest']['build'] );
+	}
+
+	public function test_compressed_build_only_minifies_the_published_asset(): void {
+		$this->workspace->write_file( 'document', $this->post_id, 'css/minified.css', ".minified {\n  color: red;\n}\n" );
+		$this->workspace->update_build_settings( 'document', $this->post_id, 'compressed', false );
+		$compiler = new Compiler( $this->workspace );
+		$result = $compiler->compile( 'document', $this->post_id, true );
+		$this->assertFalse( is_wp_error( $result ) );
+		$this->assertStringContainsString( ".minified {\n  color: red;", $result['css'] );
+		$this->assertNotEmpty( $result['publishedAssets']['css'] );
+		$this->assertSame( '', $result['publishedAssets']['sourceMap'] );
+		$published = $compiler->published_output( 'document', $this->post_id );
+		$this->assertStringContainsString( '.minified{color:red}', $published['css'] );
+		$this->assertStringNotContainsString( 'sourceMappingURL=', $published['css'] );
+		$this->workspace->update_build_settings( 'document', $this->post_id, 'compressed', true );
+		$with_map = $compiler->compile( 'document', $this->post_id, true );
+		$this->assertNotEmpty( $with_map['publishedAssets']['sourceMap'] );
+		$this->assertStringContainsString( 'sourceMappingURL=', $compiler->published_output( 'document', $this->post_id )['css'] );
+		$this->workspace->delete_file( 'document', $this->post_id, 'css/minified.css' );
 	}
 
 	public function test_published_css_can_be_restored_after_a_new_request(): void {

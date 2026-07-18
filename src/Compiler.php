@@ -16,6 +16,9 @@ final class Compiler {
 		if ( is_wp_error( $listing ) ) { return $listing; }
 		$manifest = $listing['manifest'];
 		$entries  = isset( $manifest['entries'] ) && is_array( $manifest['entries'] ) ? $manifest['entries'] : [ 'scss/main.scss', 'js/main.js' ];
+		$build = is_array( $manifest['build'] ?? null ) ? $manifest['build'] : [ 'cssOutput' => 'expanded', 'sourceMaps' => true ];
+		$css_output = ( $build['cssOutput'] ?? 'expanded' ) === 'compressed' ? 'compressed' : 'expanded';
+		$source_maps_enabled = array_key_exists( 'sourceMaps', $build ) ? (bool) $build['sourceMaps'] : true;
 		$compile_root = $root;
 		$preview_root = null;
 		if ( null !== $draft_content && $draft_path && preg_match( '/\.scss$/i', $draft_path ) ) {
@@ -48,7 +51,7 @@ final class Compiler {
 			} elseif ( $extension === 'css' ) {
 				$css .= "\n/* {$entry} */\n" . $content . "\n";
 			} else {
-				$result = $this->compile_scss( $content, $compile_root, $entry );
+				$result = $this->compile_scss( $content, $compile_root, $entry, $source_maps_enabled );
 				if ( is_wp_error( $result ) ) {
 					$data = $result->get_error_data();
 					$diagnostics[] = array_merge( [ 'severity' => 'error', 'path' => $entry, 'message' => $result->get_error_message() ], is_array( $data ) ? $data : [] );
@@ -69,10 +72,24 @@ final class Compiler {
 			'contentHash' => hash( 'sha256', $css . "\0" . $js ),
 			'diagnostics' => array_values( $diagnostics ),
 			'publishedAssets' => null,
+			'build' => [ 'cssOutput' => $css_output, 'sourceMaps' => $source_maps_enabled ],
 		];
 
 		if ( $publish && ! $has_errors ) {
-			$response['publishedAssets'] = $this->publish( $scope, $post_id, $css, $js, $source_maps );
+			$published_css = $css;
+			$published_maps = $source_maps_enabled ? $source_maps : [];
+			if ( $css_output === 'compressed' && trim( $css ) !== '' ) {
+				$compressed = $this->compress_css( $css, $root, $source_maps_enabled );
+				if ( is_wp_error( $compressed ) ) {
+					$response['diagnostics'][] = [ 'severity' => 'error', 'path' => 'dist', 'message' => $compressed->get_error_message() ];
+				} else {
+					$published_css = $compressed['css'];
+					$published_maps = ! empty( $compressed['sourceMap'] ) ? [ 'bundle.css' => $compressed['sourceMap'] ] : [];
+				}
+			}
+			if ( ! array_filter( $response['diagnostics'], static function ( $item ) { return ( $item['severity'] ?? '' ) === 'error'; } ) ) {
+				$response['publishedAssets'] = $this->publish( $scope, $post_id, $published_css, $js, $published_maps );
+			}
 		}
 		if ( $preview_root ) { $this->remove_preview_workspace( $preview_root ); }
 
@@ -129,7 +146,7 @@ final class Compiler {
 		@rmdir( $root );
 	}
 
-	private function compile_scss( string $source, string $root, string $entry ) {
+	private function compile_scss( string $source, string $root, string $entry, bool $source_maps = true ) {
 		if ( ! class_exists( '\\ScssPhp\\ScssPhp\\Compiler' ) ) {
 			return Support::error( 'bcs_scss_compiler_missing', __( 'The bundled SCSS compiler is not installed. Run Composer install for Bricks Code Studio.', 'bricks-code-studio' ), 503 );
 		}
@@ -137,13 +154,15 @@ final class Compiler {
 		try {
 			$compiler = new \ScssPhp\ScssPhp\Compiler();
 			$compiler->setImportPaths( [ $root, $root . '/scss' ] );
-			$compiler->setSourceMap( \ScssPhp\ScssPhp\Compiler::SOURCE_MAP_FILE );
-			$compiler->setSourceMapOptions( [
-				'sourceMapBasepath' => $root,
-				'sourceMapRootpath' => '',
-				'sourceMapURL'      => null,
-				'outputSourceFiles' => true,
-			] );
+			if ( $source_maps ) {
+				$compiler->setSourceMap( \ScssPhp\ScssPhp\Compiler::SOURCE_MAP_FILE );
+				$compiler->setSourceMapOptions( [
+					'sourceMapBasepath' => $root,
+					'sourceMapRootpath' => '',
+					'sourceMapURL'      => null,
+					'outputSourceFiles' => true,
+				] );
+			}
 			if ( class_exists( '\\ScssPhp\\ScssPhp\\OutputStyle' ) && method_exists( $compiler, 'setOutputStyle' ) ) {
 				// Bricks' CSS converter expects declaration delimiters that compressed Sass may omit.
 				$compiler->setOutputStyle( \ScssPhp\ScssPhp\OutputStyle::EXPANDED );
@@ -153,6 +172,28 @@ final class Compiler {
 		} catch ( \Throwable $error ) {
 			$line = method_exists( $error, 'getSassLine' ) ? (int) $error->getSassLine() : (int) $error->getLine();
 			return Support::error( 'bcs_scss_compile_error', $error->getMessage(), 422, [ 'line' => max( 1, $line ) ] );
+		}
+	}
+
+	private function compress_css( string $css, string $root, bool $source_maps ) {
+		try {
+			$compiler = new \ScssPhp\ScssPhp\Compiler();
+			if ( class_exists( '\\ScssPhp\\ScssPhp\\OutputStyle' ) && method_exists( $compiler, 'setOutputStyle' ) ) {
+				$compiler->setOutputStyle( \ScssPhp\ScssPhp\OutputStyle::COMPRESSED );
+			}
+			if ( $source_maps ) {
+				$compiler->setSourceMap( \ScssPhp\ScssPhp\Compiler::SOURCE_MAP_FILE );
+				$compiler->setSourceMapOptions( [
+					'sourceMapBasepath' => $root,
+					'sourceMapRootpath' => '',
+					'sourceMapURL' => null,
+					'outputSourceFiles' => true,
+				] );
+			}
+			$result = $compiler->compileString( $css, $root . '/bundle.css' );
+			return [ 'css' => $result->getCss(), 'sourceMap' => $source_maps ? $result->getSourceMap() : null ];
+		} catch ( \Throwable $error ) {
+			return Support::error( 'bcs_css_minify_error', $error->getMessage(), 422 );
 		}
 	}
 

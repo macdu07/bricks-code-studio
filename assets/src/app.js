@@ -33,7 +33,7 @@ const state = {
   pendingCss: '',
   dirty: false,
   saveInFlight: null,
-  prefs: { height: 360, open: true, scope: 'global', autoSync: true },
+  prefs: { height: 360, open: true, scope: 'global', autoSync: true, livePreview: true },
 };
 
 const root = document.getElementById('bricks-code-studio-root');
@@ -49,9 +49,11 @@ root.innerHTML = `
         <button data-action="rename" title="Rename">Rename</button>
         <button data-action="delete" title="Delete">Delete</button>
         <button data-action="format" title="Format document · Shift/Option+F">Format</button>
+        <button data-action="build-settings" title="Published CSS output and source map settings">Build: Expanded</button>
+        <button data-action="live-preview" title="Preview CSS and SCSS in the canvas while typing">Live ✓</button>
         <button data-action="auto-sync" title="Synchronize compatible CSS resources with Bricks whenever a style file is saved">Auto-sync</button>
         <button data-action="design" title="Sync compatible classes and variables">Sync Bricks</button>
-        <button data-action="preview">Preview</button>
+        <button data-action="preview" title="Render the proposed HTML structure without saving" hidden>Preview structure</button>
         <button data-action="run">Run JS</button>
         <button class="bcs-primary" data-action="save">Save</button>
         <button data-action="undo" hidden>Undo</button>
@@ -427,6 +429,7 @@ async function loadWorkspace(preferred = '', { loadCompiled = true } = {}) {
   const data = await api('/workspace', 'GET', params());
   state.files = data.files || [];
   state.manifest = data.manifest || { entries: [] };
+  updateBuildButton();
   if (loadCompiled) await loadCompiledOutput();
   await refreshCompletionIndex();
   renderFiles();
@@ -488,7 +491,7 @@ function updateActions() {
   root.querySelector('[data-action="format"]').hidden = isCompiled;
   root.querySelector('[data-action="run"]').hidden = !isJs;
   root.querySelector('[data-action="design"]').hidden = !(state.activePath.endsWith('.scss') || state.activePath.endsWith('.css'));
-  root.querySelector('[data-action="preview"]').hidden = isJs;
+  root.querySelector('[data-action="preview"]').hidden = !isHtml;
   updateActiveTab();
 }
 
@@ -524,6 +527,7 @@ function validateJavascript(source) {
 
 function schedulePreview() {
   clearTimeout(state.previewTimer);
+  if (state.prefs.livePreview === false) return;
   if (!state.activePath.match(/\.(scss|css)$/)) return;
   state.previewTimer = setTimeout(previewStyles, 280);
 }
@@ -773,6 +777,54 @@ function showNewFileMenu(anchor) {
   showContextMenu(['scss', 'css', 'js'].map(type => ({ label: `New ${type.toUpperCase()} file`, run: () => createFile(type) })), rect.left, rect.bottom + 4);
 }
 
+function buildSettings() {
+  const build = state.manifest?.build || {};
+  return {
+    cssOutput: build.cssOutput === 'compressed' ? 'compressed' : 'expanded',
+    sourceMaps: Object.prototype.hasOwnProperty.call(build, 'sourceMaps') ? build.sourceMaps !== false : true,
+  };
+}
+
+function updateBuildButton() {
+  const button = root.querySelector('[data-action="build-settings"]');
+  if (!button) return;
+  const build = buildSettings();
+  button.textContent = `Build: ${build.cssOutput === 'compressed' ? 'Minified' : 'Expanded'}`;
+  button.title = `Published CSS: ${build.cssOutput === 'compressed' ? 'minified' : 'expanded'} · Source maps: ${build.sourceMaps ? 'on' : 'off'}`;
+}
+
+async function saveBuildSettings(nextBuild) {
+  try {
+    setStatus('Saving build settings…');
+    const result = await api('/workspace/build', 'POST', params(nextBuild));
+    state.manifest = result.manifest || { ...state.manifest, build: result.build };
+    updateBuildButton();
+    if (state.dirty) {
+      setStatus('Build settings saved · save the current draft to republish', 'dirty');
+      return;
+    }
+    const compiled = await api('/compile', 'POST', params({ publish: true }));
+    renderDiagnostics(compiled.diagnostics || []);
+    if ((compiled.diagnostics || []).some(item => item.severity === 'error') || !compiled.publishedAssets) {
+      setStatus('Build settings saved; the last valid published asset remains active', 'error');
+      return;
+    }
+    state.compiledCss = compiled.css || '';
+    postToCanvas('bcs:css', { css: state.compiledCss });
+    setStatus(`Published CSS is now ${nextBuild.cssOutput === 'compressed' ? 'minified' : 'expanded'}${nextBuild.sourceMaps ? ' with source maps' : ' without source maps'}`, 'success');
+  } catch (error) { showError(error); }
+}
+
+function showBuildSettings(anchor) {
+  const rect = anchor.getBoundingClientRect();
+  const build = buildSettings();
+  showContextMenu([
+    { label: `CSS output: Expanded${build.cssOutput === 'expanded' ? ' ✓' : ''}`, run: () => saveBuildSettings({ ...build, cssOutput: 'expanded' }) },
+    { label: `CSS output: Minified${build.cssOutput === 'compressed' ? ' ✓' : ''}`, run: () => saveBuildSettings({ ...build, cssOutput: 'compressed' }) },
+    { label: `Source maps: ${build.sourceMaps ? 'On ✓' : 'Off'}`, run: () => saveBuildSettings({ ...build, sourceMaps: !build.sourceMaps }) },
+  ], rect.left, rect.bottom + 4);
+}
+
 function canvasIframe() {
   const preferred = document.querySelector('#bricks-builder-iframe, iframe[name="bricks-builder-iframe"]');
   if (preferred) return preferred;
@@ -808,7 +860,7 @@ function diffDiagnostics(diff = {}, warnings = []) {
 function showError(error) { console.error('[Bricks Code Studio]', error); renderDiagnostics([{ severity: 'error', message: error.message }]); setStatus(error.message, 'error'); }
 
 async function savePreferences() {
-  state.prefs = { ...state.prefs, scope: state.scope, activeFile: state.activePath, height: parseInt(panel.style.height, 10) || state.prefs.height, open: !panel.classList.contains('is-minimized'), autoSync: state.prefs.autoSync !== false };
+  state.prefs = { ...state.prefs, scope: state.scope, activeFile: state.activePath, height: parseInt(panel.style.height, 10) || state.prefs.height, open: !panel.classList.contains('is-minimized'), autoSync: state.prefs.autoSync !== false, livePreview: state.prefs.livePreview !== false };
   try { await api('/preferences', 'POST', state.prefs); } catch (_) {}
 }
 
@@ -828,13 +880,23 @@ root.addEventListener('click', async event => {
     if (match) return openFile(match.path);
   }
   if (action === 'new') { showNewFileMenu(button); return; }
-  const handlers = { rename: renameFile, delete: deleteFile, format: formatDocument, save: state.activePath === 'structure.html' ? saveStructure : saveFile, preview: state.activePath === 'structure.html' ? previewStructure : previewStyles, undo: undoStructure, design: syncDesign };
+  if (action === 'build-settings') { showBuildSettings(button); return; }
+  const handlers = { rename: renameFile, delete: deleteFile, format: formatDocument, save: state.activePath === 'structure.html' ? saveStructure : saveFile, preview: previewStructure, undo: undoStructure, design: syncDesign };
   if (handlers[action]) return handlers[action]();
   if (action === 'auto-sync') {
     state.prefs.autoSync = !state.prefs.autoSync;
     updateAutoSyncButton();
     await savePreferences();
     setStatus(`Automatic Bricks sync ${state.prefs.autoSync ? 'enabled' : 'disabled'}`, 'success');
+    return;
+  }
+  if (action === 'live-preview') {
+    state.prefs.livePreview = state.prefs.livePreview === false;
+    updateLivePreviewButton();
+    await savePreferences();
+    if (state.prefs.livePreview && /\.(scss|css)$/i.test(state.activePath)) void previewStyles();
+    else clearTimeout(state.previewTimer);
+    setStatus(`Live style preview ${state.prefs.livePreview ? 'enabled' : 'disabled'}`, 'success');
     return;
   }
   if (action === 'run') { postToCanvas('bcs:run-js', { code: currentContent() }); setStatus('Reloading canvas with JS preview…'); }
@@ -880,6 +942,14 @@ function updateAutoSyncButton() {
   button.setAttribute('aria-pressed', state.prefs.autoSync !== false ? 'true' : 'false');
 }
 
+function updateLivePreviewButton() {
+  const button = root.querySelector('[data-action="live-preview"]');
+  const enabled = state.prefs.livePreview !== false;
+  button.classList.toggle('is-active', enabled);
+  button.textContent = enabled ? 'Live ✓' : 'Live';
+  button.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+}
+
 (async function init() {
   try {
     state.prefs = { ...state.prefs, ...(await api('/preferences')) };
@@ -888,6 +958,7 @@ function updateAutoSyncButton() {
     panel.classList.toggle('is-minimized', state.prefs.open === false);
     setupBuilderDock();
     updateAutoSyncButton();
+    updateLivePreviewButton();
     root.querySelectorAll('[data-scope]').forEach(el => el.classList.toggle('is-active', el.dataset.scope === state.scope));
     updateActions();
     await loadWorkspace();

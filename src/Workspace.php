@@ -42,6 +42,7 @@ final class Workspace {
 				[
 					'version' => 1,
 					'entries' => [ 'scss/main.scss', 'js/main.js' ],
+					'build' => [ 'cssOutput' => 'expanded', 'sourceMaps' => true ],
 					'ownedDesignResources' => [ 'classes' => [], 'variables' => [] ],
 					'linkedDesignResources' => [ 'classes' => [], 'variables' => [] ],
 					'linkedDesignResourceMeta' => [ 'classes' => [], 'variables' => [] ],
@@ -167,6 +168,20 @@ final class Workspace {
 		return $this->atomic_write( $root . '/manifest.json', (string) wp_json_encode( $manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
 	}
 
+	public function update_build_settings( string $scope, int $post_id, string $css_output, bool $source_maps ) {
+		$root = $this->ensure_scope( $scope, $post_id );
+		if ( is_wp_error( $root ) ) { return $root; }
+		$manifest = $this->read_manifest( $scope, $post_id );
+		$manifest['build'] = [
+			'cssOutput' => in_array( $css_output, [ 'expanded', 'compressed' ], true ) ? $css_output : 'expanded',
+			'sourceMaps' => $source_maps,
+		];
+		if ( ! $this->write_manifest( $scope, $post_id, $manifest ) ) {
+			return Support::error( 'bcs_manifest_write_failed', __( 'The workspace build settings could not be saved.', 'bricks-code-studio' ), 500 );
+		}
+		return [ 'build' => $manifest['build'], 'manifest' => $manifest ];
+	}
+
 	public function dist_dir(): string { return $this->base_dir . '/dist'; }
 	public function dist_url(): string { return $this->base_url . '/dist'; }
 
@@ -206,6 +221,17 @@ final class Workspace {
 
 	private function reconcile_entries( string $scope, int $post_id, array $files ): array {
 		$manifest = $this->read_manifest( $scope, $post_id );
+		$changed = false;
+		if ( ! isset( $manifest['build'] ) || ! is_array( $manifest['build'] ) ) {
+			$manifest['build'] = [ 'cssOutput' => 'expanded', 'sourceMaps' => true ];
+			$changed = true;
+		} else {
+			$normalized_build = [
+				'cssOutput' => in_array( $manifest['build']['cssOutput'] ?? '', [ 'expanded', 'compressed' ], true ) ? $manifest['build']['cssOutput'] : 'expanded',
+				'sourceMaps' => array_key_exists( 'sourceMaps', $manifest['build'] ) ? (bool) $manifest['build']['sourceMaps'] : true,
+			];
+			if ( $manifest['build'] !== $normalized_build ) { $manifest['build'] = $normalized_build; $changed = true; }
+		}
 		$entries = [];
 		foreach ( $files as $file ) {
 			if ( $this->is_entry_file( $file ) ) { $entries[] = $file; }
@@ -214,8 +240,9 @@ final class Workspace {
 		sort( $entries, SORT_NATURAL | SORT_FLAG_CASE );
 		if ( ( $manifest['entries'] ?? [] ) !== $entries ) {
 			$manifest['entries'] = $entries;
-			$this->write_manifest( $scope, $post_id, $manifest );
+			$changed = true;
 		}
+		if ( $changed ) { $this->write_manifest( $scope, $post_id, $manifest ); }
 		return $manifest;
 	}
 

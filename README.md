@@ -6,15 +6,16 @@ Bricks Code Studio adds a docked code workspace to Bricks Builder 2.4+ for editi
 
 - Global and document-scoped workspaces.
 - Real `.scss`, `.css`, and `.js` files with multiple entry points.
-- Server-side SCSS compilation and versioned frontend assets.
-- Live CSS preview in the Bricks canvas.
+- Server-side SCSS compilation and versioned external frontend assets.
+- Per-workspace expanded or minified CSS output with optional source maps.
+- Toggleable live CSS preview in the Bricks canvas.
 - Controlled JavaScript preview.
 - CSS class and variable synchronization with Bricks.
 - Automatic synchronization—including first-time linking of same-named Bricks classes—and reactive refresh of active controls on save.
 - CodeMirror editing with autocomplete, diagnostics, and editable inline color swatches.
 - Context-aware file creation from workspace folders and VS Code-style right-click menus.
 - `Ctrl+S` / `Cmd+S` integration with the native Bricks save shortcut.
-- Experimental protected HTML structure projection, preview, diff, save-to-apply, global-class round-trip, and undo.
+- Experimental protected HTML structure projection, explicit structure preview, diff, save-to-apply, global-class round-trip, and undo.
 
 ## Requirements
 
