@@ -1,13 +1,14 @@
 import { Decoration, EditorView, keymap, lineNumbers, ViewPlugin, WidgetType } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
-import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
+import { indentRange } from '@codemirror/language';
 import { css, cssLanguage } from '@codemirror/lang-css';
 import { html, htmlLanguage } from '@codemirror/lang-html';
 import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { refreshBricksDesignState, refreshBricksStructureState } from './bricks-state-adapter.js';
-import { extensionForFolder, resolveNewFilePath } from './workspace-paths.mjs';
+import { extensionForFolder, resolveNewFilePath, tabForPath } from './workspace-paths.mjs';
 
 const boot = window.BCS_BOOT;
 if (!boot) throw new Error('Bricks Code Studio boot data is missing.');
@@ -41,11 +42,12 @@ root.innerHTML = `
     <header class="bcs-header">
       <div class="bcs-brand"><span class="bcs-mark">&lt;/&gt;</span><strong>Code Studio</strong><small>Experimental</small><span class="bcs-live" data-live>● Connecting</span></div>
       <div class="bcs-scopes" role="group"><button data-scope="global">Global</button><button data-scope="document">Document</button></div>
-      <nav class="bcs-tabs"><button data-tab="scss">SCSS</button><button data-tab="css">CSS</button><button data-tab="js">JS</button><button data-tab="html">HTML</button></nav>
+      <nav class="bcs-tabs" role="tablist"><button role="tab" data-tab="scss">SCSS</button><button role="tab" data-tab="css">CSS</button><button role="tab" data-tab="js">JS</button><button role="tab" data-tab="html">HTML</button></nav>
       <div class="bcs-actions">
         <button data-action="new" title="New file">＋</button>
         <button data-action="rename" title="Rename">Rename</button>
         <button data-action="delete" title="Delete">Delete</button>
+        <button data-action="format" title="Format document · Shift/Option+F">Format</button>
         <button data-action="auto-sync" title="Synchronize compatible CSS resources with Bricks whenever a style file is saved">Auto-sync</button>
         <button data-action="design" title="Sync compatible classes and variables">Sync Bricks</button>
         <button data-action="preview">Preview</button>
@@ -62,7 +64,7 @@ root.innerHTML = `
       <main class="bcs-editor-area"><div class="bcs-breadcrumb">Choose a file</div><div class="bcs-editor"></div></main>
       <aside class="bcs-files"><div class="bcs-files-title">Workspace</div><div class="bcs-file-list"></div></aside>
     </div>
-    <footer class="bcs-status"><span data-status>Ready</span><span data-meta>Autocomplete: Ctrl/⌘ Space · Bricks Code Studio ${boot.version}</span></footer>
+    <footer class="bcs-status"><span data-status>Ready</span><span data-meta>Autocomplete: Ctrl/⌘ Space · Format: Shift/Option+F · Bricks Code Studio ${boot.version}</span></footer>
     <div class="bcs-context-menu" role="menu" hidden></div>
   </section>`;
 
@@ -93,7 +95,7 @@ function params(extra = {}) { return { scope: state.scope, postId: state.postId,
 function setStatus(message, type = '') { statusNode.textContent = message; statusNode.dataset.type = type; }
 function language(path) {
   if (path.endsWith('.js')) return javascript();
-  if (path === 'structure.html') return html();
+  if (path === 'structure.html') return html({ autoCloseTags: true, selfClosingTags: true });
   return css();
 }
 
@@ -276,7 +278,7 @@ const colorSwatches = ViewPlugin.fromClass(class {
 
 function mountEditor(content = '', readOnly = false) {
   if (state.editor) state.editor.destroy();
-  const extensions = [lineNumbers(), history(), autocompletion({ activateOnTyping: true, activateOnTypingDelay: 120, maxRenderedOptions: 60 }), keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap]), language(state.activePath), completionLanguageData(state.activePath), oneDark, EditorView.editable.of(!readOnly)];
+  const extensions = [lineNumbers(), history(), closeBrackets(), autocompletion({ activateOnTyping: true, activateOnTypingDelay: 120, maxRenderedOptions: 60 }), keymap.of([{ key: 'Shift-Alt-f', run: formatDocument }, ...closeBracketsKeymap, ...completionKeymap, ...defaultKeymap, ...historyKeymap]), language(state.activePath), completionLanguageData(state.activePath), oneDark, EditorView.editable.of(!readOnly)];
   if (/\.(scss|css)$/i.test(state.activePath)) extensions.push(colorSwatches);
   extensions.push(EditorView.updateListener.of(update => {
     if (!update.docChanged || readOnly) return;
@@ -295,9 +297,26 @@ function mountEditor(content = '', readOnly = false) {
 }
 
 function currentContent() { return state.editor ? state.editor.state.doc.toString() : ''; }
+
+function formatDocument(view = state.editor) {
+  if (!view || state.activePath === 'compiled.css') return false;
+  const changes = indentRange(view.state, 0, view.state.doc.length);
+  if (changes.empty) {
+    setStatus('Document is already formatted', 'success');
+    return true;
+  }
+  view.dispatch({ changes, scrollIntoView: true });
+  setStatus('Document formatted · save to publish', 'dirty');
+  return true;
+}
+
 function renderFiles() {
   fileList.replaceChildren();
-  const tree = {};
+  const tree = {
+    scss: { children: {}, file: null },
+    css: { children: {}, file: null },
+    js: { children: {}, file: null },
+  };
   state.files.forEach(file => {
     let branch = tree;
     const parts = file.path.split('/');
@@ -307,10 +326,14 @@ function renderFiles() {
       branch = branch[part].children;
     });
   });
-  const renderBranch = (branch, host, parentPath = '') => Object.keys(branch).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(name => {
+  const rootOrder = { scss: 0, css: 1, js: 2 };
+  const renderBranch = (branch, host, parentPath = '') => Object.keys(branch).sort((a, b) => {
+    if (!parentPath && (rootOrder[a] !== undefined || rootOrder[b] !== undefined)) return (rootOrder[a] ?? 99) - (rootOrder[b] ?? 99);
+    return a.localeCompare(b, undefined, { numeric: true });
+  }).forEach(name => {
     const node = branch[name];
     const nodePath = parentPath ? `${parentPath}/${name}` : name;
-    if (Object.keys(node.children).length) {
+    if (Object.keys(node.children).length || (!parentPath && rootOrder[name] !== undefined)) {
       const folder = document.createElement('details');
       folder.className = 'bcs-folder';
       folder.dataset.path = nodePath;
@@ -348,15 +371,32 @@ function renderFiles() {
   renderBranch(tree, fileList);
 }
 
-async function loadWorkspace(preferred = '') {
+async function loadCompiledOutput() {
+  try {
+    const published = await api('/compiled', 'GET', params());
+    if (published.available) {
+      state.compiledCss = published.css || '';
+      return;
+    }
+    const compiled = await api('/compile', 'POST', params({ publish: false }));
+    if (!(compiled.diagnostics || []).some(item => item.severity === 'error')) state.compiledCss = compiled.css || '';
+  } catch (error) {
+    console.warn('[Bricks Code Studio] Could not restore compiled CSS view', error);
+  }
+}
+
+async function loadWorkspace(preferred = '', { loadCompiled = true } = {}) {
   setStatus('Loading workspace…');
   const data = await api('/workspace', 'GET', params());
   state.files = data.files || [];
   state.manifest = data.manifest || { entries: [] };
+  if (loadCompiled) await loadCompiledOutput();
   await refreshCompletionIndex();
   renderFiles();
   const target = preferred || state.prefs.activeFile || state.files[0]?.path;
-  if (target && state.files.some(file => file.path === target)) await openFile(target);
+  if (target === 'compiled.css') openCompiledCss(false);
+  else if (target === 'structure.html' && state.postId) await openStructure();
+  else if (target && state.files.some(file => file.path === target)) await openFile(target);
   else { state.activePath = ''; state.dirty = false; breadcrumb.textContent = 'Empty workspace'; mountEditor(''); }
   setStatus('Ready');
 }
@@ -389,6 +429,16 @@ async function openStructure() {
   renderFiles();
   updateActions();
   setStatus('HTML view generated');
+  savePreferences();
+}
+
+function openCompiledCss(persist = true) {
+  state.activePath = 'compiled.css';
+  state.dirty = false;
+  breadcrumb.textContent = 'Compiled preview';
+  mountEditor(state.compiledCss || '/* No published CSS build yet. Save a CSS or SCSS entry to generate it. */', true);
+  updateActions();
+  if (persist) savePreferences();
 }
 
 function updateActions() {
@@ -398,9 +448,20 @@ function updateActions() {
   root.querySelector('[data-action="save"]').hidden = isCompiled;
   root.querySelector('[data-action="rename"]').hidden = isHtml || isCompiled;
   root.querySelector('[data-action="delete"]').hidden = isHtml || isCompiled;
+  root.querySelector('[data-action="format"]').hidden = isCompiled;
   root.querySelector('[data-action="run"]').hidden = !isJs;
   root.querySelector('[data-action="design"]').hidden = !(state.activePath.endsWith('.scss') || state.activePath.endsWith('.css'));
   root.querySelector('[data-action="preview"]').hidden = isJs;
+  updateActiveTab();
+}
+
+function updateActiveTab() {
+  const activeTab = tabForPath(state.activePath);
+  root.querySelectorAll('[data-tab]').forEach(button => {
+    const active = button.dataset.tab === activeTab;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
 }
 
 function renderDiagnostics(items = []) {
@@ -484,7 +545,7 @@ async function saveFile({ fromBricksShortcut = false } = {}) {
       const finalStatus = result.publishedAssets
         ? { message: `${fromBricksShortcut ? 'Code Studio saved and published · Bricks save requested' : 'Saved and published'}${syncSuffix}`, type: 'success' }
         : { message: 'Source saved; last valid build remains published', type: 'error' };
-      await loadWorkspace(state.activePath);
+      await loadWorkspace(state.activePath, { loadCompiled: false });
       setStatus(finalStatus.message, finalStatus.type);
     } catch (error) { showError(error); }
     finally { state.saveInFlight = null; }
@@ -672,7 +733,7 @@ function showFileMenu(path, x, y) {
 
 function showNewFileMenu(anchor) {
   const rect = anchor.getBoundingClientRect();
-  showContextMenu(['scss', 'js', 'css'].map(type => ({ label: `New ${type.toUpperCase()} file`, run: () => createFile(type) })), rect.left, rect.bottom + 4);
+  showContextMenu(['scss', 'css', 'js'].map(type => ({ label: `New ${type.toUpperCase()} file`, run: () => createFile(type) })), rect.left, rect.bottom + 4);
 }
 
 function canvasIframe() {
@@ -725,12 +786,12 @@ root.addEventListener('click', async event => {
   if (button.dataset.tab) {
     const tab = button.dataset.tab;
     if (tab === 'html') return openStructure();
-    if (tab === 'css') { state.activePath = 'compiled.css'; state.dirty = false; breadcrumb.textContent = 'Compiled preview'; mountEditor(state.compiledCss || '/* Compile SCSS to inspect output. */', true); updateActions(); return; }
+    if (tab === 'css') { openCompiledCss(); return; }
     const match = state.files.find(file => file.path.endsWith(tab === 'scss' ? '.scss' : '.js'));
     if (match) return openFile(match.path);
   }
   if (action === 'new') { showNewFileMenu(button); return; }
-  const handlers = { rename: renameFile, delete: deleteFile, save: state.activePath === 'structure.html' ? saveStructure : saveFile, preview: state.activePath === 'structure.html' ? previewStructure : previewStyles, undo: undoStructure, design: syncDesign };
+  const handlers = { rename: renameFile, delete: deleteFile, format: formatDocument, save: state.activePath === 'structure.html' ? saveStructure : saveFile, preview: state.activePath === 'structure.html' ? previewStructure : previewStyles, undo: undoStructure, design: syncDesign };
   if (handlers[action]) return handlers[action]();
   if (action === 'auto-sync') {
     state.prefs.autoSync = !state.prefs.autoSync;

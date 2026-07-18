@@ -79,6 +79,24 @@ final class Compiler {
 		return $response;
 	}
 
+	public function published_output( string $scope, int $post_id = 0 ): array {
+		$published = get_option( 'bcs_published_assets', [ 'global' => [], 'documents' => [] ] );
+		$assets = $scope === 'global'
+			? ( $published['global'] ?? [] )
+			: ( $published['documents'][ (string) $post_id ] ?? [] );
+		$key = $scope === 'global' ? 'global' : 'document-' . $post_id;
+		$hash = sanitize_key( (string) ( $assets['hash'] ?? '' ) );
+		$css = $this->read_published_asset( (string) ( $assets['css'] ?? '' ), $key, $hash, 'css' );
+		$javascript = $this->read_published_asset( (string) ( $assets['js'] ?? '' ), $key, $hash, 'js' );
+		return [
+			'available' => $css !== '' || $javascript !== '',
+			'css' => $css,
+			'javascript' => $javascript,
+			'contentHash' => $hash,
+			'publishedAssets' => is_array( $assets ) ? $assets : [],
+		];
+	}
+
 	private function create_preview_workspace( string $scope, int $post_id, array $files, string $draft_path, string $draft_content ) {
 		$root = trailingslashit( get_temp_dir() ) . 'bcs-preview-' . wp_generate_uuid4();
 		if ( ! wp_mkdir_p( $root ) ) {
@@ -187,6 +205,19 @@ final class Compiler {
 			@unlink( $tmp );
 			throw new \RuntimeException( __( 'Could not publish the compiled asset atomically.', 'bricks-code-studio' ) );
 		}
+	}
+
+	private function read_published_asset( string $url, string $key, string $hash, string $extension ): string {
+		if ( ! $url || ! $hash ) { return ''; }
+		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
+		$filename = basename( $path );
+		$expected = $key . '-' . $hash . '.' . $extension;
+		if ( $filename !== $expected ) { return ''; }
+		$file = wp_normalize_path( $this->workspace->dist_dir() . '/' . $filename );
+		$dist = trailingslashit( wp_normalize_path( $this->workspace->dist_dir() ) );
+		if ( strpos( $file, $dist ) !== 0 || ! is_file( $file ) || is_link( $file ) ) { return ''; }
+		$content = file_get_contents( $file );
+		return false === $content ? '' : $content;
 	}
 
 	private function cleanup( string $key, string $current_hash ): void {

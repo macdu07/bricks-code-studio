@@ -20,6 +20,7 @@ final class RestController {
 			'/file' => [ [ 'GET', 'file_read' ], [ 'PUT', 'file_write' ], [ 'DELETE', 'file_delete' ] ],
 			'/file/move' => [ 'POST', 'file_move' ],
 			'/compile' => [ 'POST', 'compile' ],
+			'/compiled' => [ 'GET', 'compiled' ],
 			'/structure' => [ 'GET', 'structure' ],
 			'/structure/preview' => [ 'POST', 'structure_preview' ],
 			'/structure/apply' => [ 'POST', 'structure_apply' ],
@@ -65,6 +66,11 @@ final class RestController {
 		[ $scope, $post_id ] = $this->scope( $request );
 		$draft_content = $request->has_param( 'draftContent' ) ? (string) $request['draftContent'] : null;
 		return $this->respond( $this->compiler->compile( $scope, $post_id, rest_sanitize_boolean( $request['publish'] ), sanitize_text_field( (string) $request['draftPath'] ) ?: null, $draft_content ) );
+	}
+
+	public function compiled( \WP_REST_Request $request ) {
+		[ $scope, $post_id ] = $this->scope( $request );
+		return $this->respond( $this->compiler->published_output( $scope, $post_id ) );
 	}
 
 	public function structure( \WP_REST_Request $request ) { return $this->respond( $this->structure->projection( absint( $request['postId'] ) ) ); }

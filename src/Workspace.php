@@ -18,7 +18,7 @@ final class Workspace {
 			return $root;
 		}
 
-		foreach ( [ $root, $root . '/scss', $root . '/js', $this->base_dir . '/dist' ] as $dir ) {
+		foreach ( [ $root, $root . '/scss', $root . '/css', $root . '/js', $this->base_dir . '/dist' ] as $dir ) {
 			if ( ! wp_mkdir_p( $dir ) ) {
 				return Support::error( 'bcs_workspace_unwritable', __( 'The Code Studio workspace is not writable.', 'bricks-code-studio' ), 500 );
 			}

@@ -93,6 +93,19 @@
 }
 .bcs-header button:hover { background: var(--bcs-bg-3); color: var(--bcs-text); }
 .bcs-header button.is-active { background: var(--bcs-accent-bg); color: var(--bcs-accent); }
+.bcs-tabs button.is-active {
+  position: relative;
+  background: color-mix(in srgb, var(--bcs-accent-bg) 72%, transparent);
+  color: var(--bcs-accent);
+}
+.bcs-tabs button.is-active::after {
+  content: "";
+  position: absolute;
+  inset: auto 7px 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--bcs-accent);
+}
 .bcs-header button.bcs-primary { background: var(--bcs-accent); color: var(--bcs-accent-inverse); font-weight: 700; }
 .bcs-header button[hidden] { display: none; }
 
@@ -117,6 +130,9 @@
 .bcs-folder > summary > span { vertical-align: middle; }
 .bcs-folder-add {
   float: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 24px;
   height: 24px;
   margin-top: -3px;
@@ -125,7 +141,8 @@
   background: transparent;
   color: var(--bcs-muted);
   cursor: pointer;
-  font: 16px/24px var(--builder-font-family-monospace, monospace);
+  padding: 0;
+  font: 16px/1 var(--builder-font-family-monospace, monospace);
   opacity: .55;
 }
 .bcs-folder > summary:hover .bcs-folder-add, .bcs-folder-add:focus-visible { background: var(--bcs-bg-3); color: var(--bcs-text); opacity: 1; }

@@ -13,3 +13,11 @@ export function resolveNewFilePath(folderPath, input) {
   if (!value.toLowerCase().endsWith(`.${extension}`)) throw new Error(`Files inside ${folder} must use the .${extension} extension.`);
   return value;
 }
+
+export function tabForPath(path = '') {
+  if (path === 'structure.html') return 'html';
+  if (path === 'compiled.css' || path.toLowerCase().endsWith('.css')) return 'css';
+  if (path.toLowerCase().endsWith('.js')) return 'js';
+  if (path.toLowerCase().endsWith('.scss')) return 'scss';
+  return '';
+}

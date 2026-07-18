@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extensionForFolder, resolveNewFilePath } from '../../assets/src/workspace-paths.mjs';
+import { extensionForFolder, resolveNewFilePath, tabForPath } from '../../assets/src/workspace-paths.mjs';
 
 test('detects the file type from root and nested folders', () => {
   assert.equal(extensionForFolder('scss'), 'scss');
@@ -22,4 +22,12 @@ test('keeps an explicit workspace path without duplicating its folder', () => {
 test('rejects an extension that does not match the selected folder', () => {
   assert.throws(() => resolveNewFilePath('js', 'menu.scss'), /must use the \.js extension/);
   assert.throws(() => resolveNewFilePath('scss/components', 'card.js'), /must use the \.scss extension/);
+});
+
+test('maps editor paths to the active code tab', () => {
+  assert.equal(tabForPath('scss/main.scss'), 'scss');
+  assert.equal(tabForPath('compiled.css'), 'css');
+  assert.equal(tabForPath('css/reset.css'), 'css');
+  assert.equal(tabForPath('js/main.js'), 'js');
+  assert.equal(tabForPath('structure.html'), 'html');
 });

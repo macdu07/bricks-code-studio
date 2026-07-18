@@ -43,6 +43,30 @@ final class WorkspaceTest extends TestCase {
 		$this->assertSame( 3, json_decode( $result['sourceMaps']['scss/main.scss'], true )['version'] );
 	}
 
+	public function test_plain_css_is_an_independent_publishable_entry(): void {
+		$this->workspace->write_file( 'document', $this->post_id, 'css/plain.css', '.plain-css { display: grid; }' );
+		$result = ( new Compiler( $this->workspace ) )->compile( 'document', $this->post_id, false );
+		$this->assertStringContainsString( '/* css/plain.css */', $result['css'] );
+		$this->assertStringContainsString( '.plain-css { display: grid; }', $result['css'] );
+		$this->assertContains( 'css/plain.css', $this->workspace->list_files( 'document', $this->post_id )['manifest']['entries'] );
+		$this->workspace->delete_file( 'document', $this->post_id, 'css/plain.css' );
+	}
+
+	public function test_published_css_can_be_restored_after_a_new_request(): void {
+		$this->workspace->write_file( 'document', $this->post_id, 'scss/persisted.scss', '.persisted-view { color: rebeccapurple; }' );
+		$compiler = new Compiler( $this->workspace );
+		$published = $compiler->compile( 'document', $this->post_id, true );
+		$this->assertFalse( is_wp_error( $published ) );
+		$restored = ( new Compiler( new Workspace() ) )->published_output( 'document', $this->post_id );
+		$this->assertTrue( $restored['available'] );
+		$this->assertStringContainsString( '.persisted-view', $restored['css'] );
+		$this->workspace->delete_file( 'document', $this->post_id, 'scss/persisted.scss' );
+		$assets = get_option( 'bcs_published_assets', [ 'global' => [], 'documents' => [] ] );
+		unset( $assets['documents'][ (string) $this->post_id ] );
+		update_option( 'bcs_published_assets', $assets, false );
+		foreach ( glob( $this->workspace->dist_dir() . '/document-' . $this->post_id . '-*' ) ?: [] as $file ) { @unlink( $file ); }
+	}
+
 	public function test_non_partial_stylesheets_are_registered_as_entries(): void {
 		$this->workspace->write_file( 'document', $this->post_id, 'scss/cards.scss', '.card { display: grid; }' );
 		$this->workspace->write_file( 'document', $this->post_id, 'scss/_tokens.scss', '$space: 1rem;' );
